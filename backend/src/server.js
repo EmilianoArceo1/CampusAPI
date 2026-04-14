@@ -9,44 +9,17 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json());
 
-let alumnos = [
-  {
-    id: 1,
-    nombres: 'Emiliano',
-    apellidos: 'Arceo Marquez',
-    matricula: 'IS2026001',
-    promedio: 95.5,
-  },
-  {
-    id: 2,
-    nombres: 'Ana',
-    apellidos: 'Lopez Chan',
-    matricula: 'IS2026002',
-    promedio: 91.2,
-  },
-];
-
-let profesores = [
-  {
-    id: 1,
-    numeroEmpleado: 1201,
-    nombres: 'Eduardo',
-    apellidos: 'Rodriguez',
-    horasClase: 20,
-  },
-  {
-    id: 2,
-    numeroEmpleado: 1202,
-    nombres: 'Mariana',
-    apellidos: 'Pech Cetz',
-    horasClase: 16,
-  },
-];
+let alumnos = [];
+let profesores = [];
 
 function asNumber(value) {
   if (typeof value === 'number') return value;
   if (typeof value === 'string' && value.trim() !== '') return Number(value);
   return NaN;
+}
+
+function isBlank(value) {
+  return value === undefined || value === null || String(value).trim() === '';
 }
 
 function validateAlumno(payload) {
@@ -56,23 +29,26 @@ function validateAlumno(payload) {
     return ['El cuerpo de la solicitud debe ser un objeto JSON válido.'];
   }
 
-  if (payload.nombres === undefined || payload.nombres === null || String(payload.nombres).trim() === '') {
+  const id = asNumber(payload.id);
+  if (payload.id === undefined || !Number.isInteger(id) || id <= 0) {
+    errors.push('id es obligatorio y debe ser un entero positivo.');
+  }
+
+  if (isBlank(payload.nombres)) {
     errors.push('nombres es obligatorio y no puede estar vacío.');
   }
 
-  if (payload.apellidos === undefined || payload.apellidos === null || String(payload.apellidos).trim() === '') {
+  if (isBlank(payload.apellidos)) {
     errors.push('apellidos es obligatorio y no puede estar vacío.');
   }
 
-  if (payload.matricula === undefined || payload.matricula === null || String(payload.matricula).trim() === '') {
+  if (isBlank(payload.matricula)) {
     errors.push('matricula es obligatorio y no puede estar vacío.');
   }
 
   const promedio = asNumber(payload.promedio);
   if (payload.promedio === undefined || Number.isNaN(promedio)) {
     errors.push('promedio es obligatorio y debe ser numérico.');
-  } else if (promedio < 0 || promedio > 100) {
-    errors.push('promedio debe estar entre 0 y 100.');
   }
 
   return errors;
@@ -85,32 +61,35 @@ function validateProfesor(payload) {
     return ['El cuerpo de la solicitud debe ser un objeto JSON válido.'];
   }
 
+  const id = asNumber(payload.id);
+  if (payload.id === undefined || !Number.isInteger(id) || id <= 0) {
+    errors.push('id es obligatorio y debe ser un entero positivo.');
+  }
+
   const numeroEmpleado = asNumber(payload.numeroEmpleado);
   if (payload.numeroEmpleado === undefined || Number.isNaN(numeroEmpleado)) {
     errors.push('numeroEmpleado es obligatorio y debe ser numérico.');
   }
 
-  if (payload.nombres === undefined || payload.nombres === null || String(payload.nombres).trim() === '') {
+  if (isBlank(payload.nombres)) {
     errors.push('nombres es obligatorio y no puede estar vacío.');
   }
 
-  if (payload.apellidos === undefined || payload.apellidos === null || String(payload.apellidos).trim() === '') {
+  if (isBlank(payload.apellidos)) {
     errors.push('apellidos es obligatorio y no puede estar vacío.');
   }
 
   const horasClase = asNumber(payload.horasClase);
   if (payload.horasClase === undefined || Number.isNaN(horasClase)) {
     errors.push('horasClase es obligatorio y debe ser numérico.');
-  } else if (horasClase < 0) {
-    errors.push('horasClase no puede ser negativo.');
   }
 
   return errors;
 }
 
-function normalizeAlumno(payload, id) {
+function normalizeAlumno(payload) {
   return {
-    id,
+    id: asNumber(payload.id),
     nombres: String(payload.nombres).trim(),
     apellidos: String(payload.apellidos).trim(),
     matricula: String(payload.matricula).trim(),
@@ -118,9 +97,9 @@ function normalizeAlumno(payload, id) {
   };
 }
 
-function normalizeProfesor(payload, id) {
+function normalizeProfesor(payload) {
   return {
-    id,
+    id: asNumber(payload.id),
     numeroEmpleado: asNumber(payload.numeroEmpleado),
     nombres: String(payload.nombres).trim(),
     apellidos: String(payload.apellidos).trim(),
@@ -135,11 +114,6 @@ function parseId(req, res, next) {
   }
   req.resourceId = id;
   next();
-}
-
-function nextId(collection) {
-  if (!collection.length) return 1;
-  return Math.max(...collection.map((item) => item.id)) + 1;
 }
 
 app.get('/api/health', (_req, res) => {
@@ -161,12 +135,18 @@ app.get('/alumnos/:id', parseId, (req, res) => {
 app.post('/alumnos', (req, res) => {
   const errors = validateAlumno(req.body);
   if (errors.length) {
-    return res.status(500).json({ message: 'Error de validación.', errors });
+    return res.status(400).json({ message: 'Error de validación.', errors });
   }
 
-  const newAlumno = normalizeAlumno(req.body, nextId(alumnos));
-  alumnos.push(newAlumno);
-  res.status(201).json(newAlumno);
+  const nuevoAlumno = normalizeAlumno(req.body);
+  const exists = alumnos.some((item) => item.id === nuevoAlumno.id);
+
+  if (exists) {
+    return res.status(400).json({ message: 'Ya existe un alumno con ese id.' });
+  }
+
+  alumnos.push(nuevoAlumno);
+  res.status(201).json(nuevoAlumno);
 });
 
 app.put('/alumnos/:id', parseId, (req, res) => {
@@ -177,10 +157,13 @@ app.put('/alumnos/:id', parseId, (req, res) => {
 
   const errors = validateAlumno(req.body);
   if (errors.length) {
-    return res.status(500).json({ message: 'Error de validación.', errors });
+    return res.status(400).json({ message: 'Error de validación.', errors });
   }
 
-  alumnos[index] = normalizeAlumno(req.body, req.resourceId);
+  const alumnoActualizado = normalizeAlumno(req.body);
+  alumnoActualizado.id = req.resourceId;
+
+  alumnos[index] = alumnoActualizado;
   res.status(200).json(alumnos[index]);
 });
 
@@ -190,9 +173,9 @@ app.delete('/alumnos/:id', parseId, (req, res) => {
     return res.status(404).json({ message: 'Alumno no encontrado.' });
   }
 
-  const deleted = alumnos[index];
+  const eliminado = alumnos[index];
   alumnos.splice(index, 1);
-  res.status(200).json({ message: 'Alumno eliminado correctamente.', alumno: deleted });
+  res.status(200).json(eliminado);
 });
 
 app.get('/profesores', (_req, res) => {
@@ -210,12 +193,18 @@ app.get('/profesores/:id', parseId, (req, res) => {
 app.post('/profesores', (req, res) => {
   const errors = validateProfesor(req.body);
   if (errors.length) {
-    return res.status(500).json({ message: 'Error de validación.', errors });
+    return res.status(400).json({ message: 'Error de validación.', errors });
   }
 
-  const newProfesor = normalizeProfesor(req.body, nextId(profesores));
-  profesores.push(newProfesor);
-  res.status(201).json(newProfesor);
+  const nuevoProfesor = normalizeProfesor(req.body);
+  const exists = profesores.some((item) => item.id === nuevoProfesor.id);
+
+  if (exists) {
+    return res.status(400).json({ message: 'Ya existe un profesor con ese id.' });
+  }
+
+  profesores.push(nuevoProfesor);
+  res.status(201).json(nuevoProfesor);
 });
 
 app.put('/profesores/:id', parseId, (req, res) => {
@@ -226,10 +215,13 @@ app.put('/profesores/:id', parseId, (req, res) => {
 
   const errors = validateProfesor(req.body);
   if (errors.length) {
-    return res.status(500).json({ message: 'Error de validación.', errors });
+    return res.status(400).json({ message: 'Error de validación.', errors });
   }
 
-  profesores[index] = normalizeProfesor(req.body, req.resourceId);
+  const profesorActualizado = normalizeProfesor(req.body);
+  profesorActualizado.id = req.resourceId;
+
+  profesores[index] = profesorActualizado;
   res.status(200).json(profesores[index]);
 });
 
@@ -239,17 +231,30 @@ app.delete('/profesores/:id', parseId, (req, res) => {
     return res.status(404).json({ message: 'Profesor no encontrado.' });
   }
 
-  const deleted = profesores[index];
+  const eliminado = profesores[index];
   profesores.splice(index, 1);
-  res.status(200).json({ message: 'Profesor eliminado correctamente.', profesor: deleted });
+  res.status(200).json(eliminado);
 });
+
+function methodNotAllowed(_req, res) {
+  res.status(405).json({ message: 'Método no permitido.' });
+}
+
+app.all('/alumnos', methodNotAllowed);
+app.all('/alumnos/:id', methodNotAllowed);
+app.all('/profesores', methodNotAllowed);
+app.all('/profesores/:id', methodNotAllowed);
 
 const frontendDist = path.resolve(__dirname, '../../frontend/dist');
 if (fs.existsSync(frontendDist)) {
   app.use(express.static(frontendDist));
 
   app.get('*', (req, res, next) => {
-    if (req.path.startsWith('/alumnos') || req.path.startsWith('/profesores') || req.path.startsWith('/api/')) {
+    if (
+      req.path.startsWith('/alumnos') ||
+      req.path.startsWith('/profesores') ||
+      req.path.startsWith('/api/')
+    ) {
       return next();
     }
     res.sendFile(path.join(frontendDist, 'index.html'));
